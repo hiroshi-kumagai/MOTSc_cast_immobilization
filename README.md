@@ -1,7 +1,7 @@
 # The Mitochondrial-derived microprotein MOTS-c attenuates immobilization-induced skeletal muscle atrophy by suppressing myosteatosis  
 
 This repository has scripts used for the publication.  
-- [Figure 4 scripts](https://github.com/hiroshi-kumagai/MOTSc_cast_immobilization/blob/main/publication_script.md)
+- [Figure 4 scripts](https://github.com/hiroshi-kumagai/MOTSc_cast_immobilization/blob/main/scripts/07.figure4_scripts.md)
 
 
 **Co-authors:**  
