@@ -1,6 +1,9 @@
 Scripts for the publication
 ================
 
+The `R` scripts below were used to generate the panels A, and B, C, E,
+and F in the Figure 4.
+
 ## Libraries
 
 ``` r
