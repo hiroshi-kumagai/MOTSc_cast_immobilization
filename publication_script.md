@@ -1,0 +1,615 @@
+Scripts for the publication
+================
+
+## Libraries
+
+``` r
+library(tidyverse)
+library(tximport)
+library(limma)
+library(DESeq2)
+library(org.Mm.eg.db)
+library(clusterProfiler)
+library(EnhancedVolcano)
+library(pheatmap)
+library(RColorBrewer)
+library(rWikiPathways)
+library(enrichplot)
+library(DOSE)
+```
+
+## Directory paths
+
+``` r
+dir <- "/Users/Emma/GitHub/MOTSc_cast_immobilization"
+datadir <- paste(dir, "data", sep = "/")
+resultsdir <- paste(dir, "results", sep = "/")
+```
+
+## Loading in RSEM data
+
+### Sample info file
+
+``` r
+file <- paste(datadir, "sampleinfo.csv", sep = "/")
+sampleinfo <- read.csv(file, header = TRUE)
+sampleinfo$condition <- factor(sampleinfo$condition, 
+                               levels = c("Non_cast", "Cast_water", "Cast_MOTSc"))
+head(sampleinfo)
+```
+
+      run condition
+    1 NC1  Non_cast
+    2 NC2  Non_cast
+    3 NC3  Non_cast
+    4 NC4  Non_cast
+    5 NC5  Non_cast
+    6 NC6  Non_cast
+                                                                             path
+    1 /Users/Emma/GitHub/MOTSc_cast_immobilization/rsem_results/NC1.genes.results
+    2 /Users/Emma/GitHub/MOTSc_cast_immobilization/rsem_results/NC2.genes.results
+    3 /Users/Emma/GitHub/MOTSc_cast_immobilization/rsem_results/NC3.genes.results
+    4 /Users/Emma/GitHub/MOTSc_cast_immobilization/rsem_results/NC4.genes.results
+    5 /Users/Emma/GitHub/MOTSc_cast_immobilization/rsem_results/NC5.genes.results
+    6 /Users/Emma/GitHub/MOTSc_cast_immobilization/rsem_results/NC6.genes.results
+
+### Ttximport
+
+``` r
+file <- paste(datadir, "txi.motsc.rsem.tpm.3gp.ncw.rds", sep = "/")
+txi <- readRDS(file)
+txi$length[txi$length == 0] <- 1
+txi$counts[1:5, 1:5]
+```
+
+                        NC1  NC2  NC3  NC4  NC5
+    ENSMUSG00000000001  471  461  475  382  395
+    ENSMUSG00000000003    0    0    0    0    0
+    ENSMUSG00000000028   29   34   41   30   38
+    ENSMUSG00000000031 8770 9450 7065 8486 8129
+    ENSMUSG00000000037    6    6    2    4    4
+
+note: this “`txi.motsc.rsem.tpm.3gp.ncw.rds`” was created from the raw
+RSEM files as follows:
+
+``` r
+files <- sampleinfo$path
+names(files) <- sampleinfo$run
+head(files)
+all(file.exists(files))
+
+txi <- tximport::tximport(files, type = "rsem", txIn = FALSE, txOut = FALSE)
+saveRDS(txi, "txi.motsc.rsem.tpm.3gp.ncw.new.rds")
+```
+
+The raw RSEM files will be available at GEO as soon as we upload the
+files.
+
+## MDS plot
+
+``` r
+pal = c("black", "red", "blue")
+shapes = c(19, 15, 17)
+limma::plotMDS(txi$abundance, top = 1000, gene.selection = "common",
+               col = pal[sampleinfo$condition],
+               pch = shapes[sampleinfo$condition],
+               cex.main = 1.25, cex.lab = 1.5, cex.axis = 1.25,
+               main = "Multidimensional scaling plot for PC1 and PC2")
+legend("topleft", legend = levels(sampleinfo$condition), 
+       text.col = pal, col = pal, 
+       pch = shapes, bg = "white", bty = "n", cex = 1.2)
+```
+
+![Figure 4 (A): Principal component analysis (PCA) of the gene
+expression signature for non cast immobilization, cast immobilization
+control (water injected), and cast immobilization with MOTS-c treatment
+groups.](publication_script_files/figure-gfm/unnamed-chunk-6-1.png)
+
+## **DESeq2**
+
+``` r
+all(sampleinfo$run == colnames(txi$counts))
+```
+
+    [1] TRUE
+
+``` r
+rownames(sampleinfo) <- colnames(txi$counts)
+dds <- DESeq2::DESeqDataSetFromTximport(txi, sampleinfo, ~ condition)
+```
+
+    using counts and average transcript lengths from tximport
+
+``` r
+dds <- DESeq2::DESeq(dds)
+```
+
+    estimating size factors
+
+    using 'avgTxLength' from assays(dds), correcting for library size
+
+    estimating dispersions
+
+    gene-wise dispersion estimates
+
+    mean-dispersion relationship
+
+    final dispersion estimates
+
+    fitting model and testing
+
+    -- replacing outliers and refitting for 30 genes
+    -- DESeq argument 'minReplicatesForReplace' = 7 
+    -- original counts are preserved in counts(dds)
+
+    estimating dispersions
+
+    fitting model and testing
+
+``` r
+dds <- BiocGenerics::estimateSizeFactors(dds)
+```
+
+    using 'avgTxLength' from assays(dds), correcting for library size
+
+### Get annotatation for the results
+
+``` r
+# get GENENAME and SYMBOL for dds results
+res_annotation <- clusterProfiler::bitr(rownames(dds),
+                                        fromType = "ENSEMBL",
+                                        toType = c("GENENAME", "SYMBOL"),
+                                        OrgDb = org.Mm.eg.db,
+                                        drop = FALSE)
+```
+
+    'select()' returned 1:many mapping between keys and columns
+
+    Warning in clusterProfiler::bitr(rownames(dds), fromType = "ENSEMBL", toType =
+    c("GENENAME", : 42.34% of input gene IDs are fail to map...
+
+``` r
+nrow(res_annotation)
+```
+
+    [1] 55774
+
+### Group and annotate the results
+
+- Cast_water vs Non_cast
+
+- Cast_MOTSc vs Cast_water
+
+``` r
+res_CastWater_NonCast <- data.frame(
+    DESeq2::results(dds,contrast=c("condition", "Cast_water", "Non_cast"))
+    )
+res_CastMOTSc_CastWater <- data.frame(
+    DESeq2::results(dds, contrast=c("condition", "Cast_MOTSc", "Cast_water"))
+    )
+deseq_results <- list(res_CastWater_NonCast = res_CastWater_NonCast, 
+                      res_CastMOTSc_CastWater = res_CastMOTSc_CastWater)
+lapply(deseq_results, head, 3)
+```
+
+    $res_CastWater_NonCast
+                        baseMean log2FoldChange      lfcSE     stat       pvalue
+    ENSMUSG00000000001 564.14228      0.1696261 0.06880835 2.465196 1.369383e-02
+    ENSMUSG00000000003   0.00000             NA         NA       NA           NA
+    ENSMUSG00000000028  61.19918      0.8070475 0.14273852 5.654028 1.567311e-08
+                               padj
+    ENSMUSG00000000001 3.367352e-02
+    ENSMUSG00000000003           NA
+    ENSMUSG00000000028 1.236493e-07
+
+    $res_CastMOTSc_CastWater
+                        baseMean log2FoldChange      lfcSE        stat    pvalue
+    ENSMUSG00000000001 564.14228   -0.004050049 0.06755029 -0.05995606 0.9521906
+    ENSMUSG00000000003   0.00000             NA         NA          NA        NA
+    ENSMUSG00000000028  61.19918   -0.049158065 0.12723454 -0.38635786 0.6992317
+                            padj
+    ENSMUSG00000000001 0.9841267
+    ENSMUSG00000000003        NA
+    ENSMUSG00000000028 0.8863406
+
+``` r
+deseq_results <- lapply(deseq_results, function(dt){
+                        dt$ENSEMBL <- rownames(dt)
+                        dt <- merge(dt, res_annotation, by = "ENSEMBL")
+                        return(dt)
+                        })
+lapply(deseq_results, nrow)
+```
+
+    $res_CastWater_NonCast
+    [1] 55774
+
+    $res_CastMOTSc_CastWater
+    [1] 55774
+
+### Create a subset by adjusted p-val \< 0.05 (Cast MOTSc vs Cast Water)
+
+``` r
+res_CastMOTSc_CastWater_adjp005 <- subset(deseq_results[[2]], padj < 0.05)
+nrow(res_CastMOTSc_CastWater_adjp005)
+```
+
+    [1] 100
+
+## Volcano plot
+
+``` r
+# using res_CastWater_NonCast
+results <- deseq_results[[1]]
+signum <- results %>% 
+    dplyr::filter(padj < 0.05 & abs(log2FoldChange) > 0.5) %>% 
+    nrow()
+name <- "Volcano plot"
+subtitle <- "Non cast vs Cast water"
+    
+EnhancedVolcano::EnhancedVolcano(results,
+                                 lab = "",
+                                 x = 'log2FoldChange',
+                                 y = 'padj',
+                                 ylim = c(0, 80),
+                                 xlab = bquote(~Log[2]~ 'fold change'),
+                                 ylab = bquote(~-Log[10]~adjusted~italic(P)),
+                                 pCutoff = 0.05,
+                                 FCcutoff = 0.5,
+                                 pointSize = 2.0, 
+                                 labSize = 3.0,
+                                 col = c('black', 'red', 'orange', 'blue'),
+                                 legendPosition = '',
+                                 legendLabels = c('NS','Log2 FC','adj.p.val','adj.p.val & Log2 FC')) +
+ggplot2::labs(title = name, titleLabSize = 10, subtitle = subtitle, caption = "") +
+ggplot2::coord_cartesian(xlim=c(-10, 25)) +
+ggplot2::scale_x_continuous(breaks=seq(-10, 25, 5)) +
+ggplot2::theme(axis.line = element_line(colour = "black"),
+               panel.grid.minor = element_blank(),
+               panel.border = element_blank(),
+               panel.background = element_blank()
+               ) 
+```
+
+![Figure 4 (B): Volcano plot that compares the gene expression levels
+between non cast immobilization and cast immobilization control
+groups.](publication_script_files/figure-gfm/unnamed-chunk-13-1.png)
+
+## Heatmap
+
+### Prepare data
+
+Using genes with adjusted p-value \< 0.05
+(`res_CastMOTSc_CastWater_adjp005`)
+
+``` r
+target_samples <- dds@colData@listData$condition %in% c("Cast_water", "Cast_MOTSc")
+target_name <- names(deseq_results[2])
+target_genes <- res_CastMOTSc_CastWater_adjp005$ENSEMBL
+dds_sub <- dds[target_genes,target_samples]
+print(target_name)
+```
+
+    [1] "res_CastMOTSc_CastWater"
+
+``` r
+print(dds_sub)
+```
+
+    class: DESeqDataSet 
+    dim: 100 16 
+    metadata(1): version
+    assays(8): counts avgTxLength ... replaceCounts replaceCooks
+    rownames(100): ENSMUSG00000002289 ENSMUSG00000002588 ...
+      ENSMUSG00000109926 ENSMUSG00000110439
+    rowData names(27): baseMean baseVar ... maxCooks replace
+    colnames(16): Ca1 Ca2 ... WT7 WT8
+    colData names(4): run condition path replaceable
+
+``` r
+vsd <- DESeq2::varianceStabilizingTransformation(dds_sub)
+mat <- SummarizedExperiment::assay(vsd)
+
+# matrix
+print(mat[1:3,1:5])
+```
+
+                             Ca1       Ca2       Ca3       Ca4       Ca5
+    ENSMUSG00000002289  8.307281  8.148840  8.686569  8.353250  8.780569
+    ENSMUSG00000002588  5.626274  5.723915  5.877195  5.611882  5.482194
+    ENSMUSG00000002985 11.036563 10.760067 10.903656 10.731855 10.471425
+
+``` r
+# z-scores
+mat <- mat - rowMeans(mat)
+print(mat[1:3,1:5])
+```
+
+                               Ca1         Ca2         Ca3        Ca4        Ca5
+    ENSMUSG00000002289 -0.35833005 -0.51677057  0.02095798 -0.3123606  0.1149579
+    ENSMUSG00000002588 -0.19650781 -0.09886643  0.05441395 -0.2108993 -0.3405877
+    ENSMUSG00000002985  0.08762151 -0.18887438 -0.04528492 -0.2170868 -0.4775166
+
+### Pheatmap
+
+``` r
+annotation.df <- data.frame(condition = factor(colData(vsd)[,c("condition")],
+                                               levels = c("Cast_water", "Cast_MOTSc")))
+rownames(annotation.df) <- colnames(mat)
+mycolors <- list(condition = c("red", "blue"))
+names(mycolors$condition) <- levels(annotation.df$condition)
+breaksList = seq(-1, 1, by = 0.1)
+
+pheatmap::pheatmap(mat, cluster_cols = FALSE, 
+                   annotation_col = annotation.df, 
+                   annotation_names_col = FALSE, 
+                   annotation_colors = mycolors,
+                   show_rownames = FALSE, 
+                   show_colnames = FALSE, 
+                   fontsize = 12,
+                   treeheight_row = 0, 
+                   breaks = breaksList,legend_breaks = c(-1, 0, 1),
+                   legend_labels = c("-1", "0", "1"),
+                   color = grDevices::colorRampPalette(rev(RColorBrewer::brewer.pal(n = 7, name = "RdYlBu")))(length(breaksList)))
+```
+
+![Figure 4 (C): Heat map of the differentially expressed genes (FDR \<
+0.05) between cast immobilization control and cast immobilization with
+MOTS-c treatment
+groups.](publication_script_files/figure-gfm/unnamed-chunk-16-1.png)
+
+``` r
+all(res_CastMOTSc_CastWater_adjp005$ENSEMBL == rownames(mat))
+```
+
+    [1] TRUE
+
+## WikiPathway
+
+``` r
+# background genes
+bkgd.genes.entrez <- clusterProfiler::bitr(rownames(dds), 
+                                           fromType = "ENSEMBL",
+                                           toType = "ENTREZID",
+                                           OrgDb = org.Mm.eg.db)
+```
+
+    'select()' returned 1:many mapping between keys and columns
+
+    Warning in clusterProfiler::bitr(rownames(dds), fromType = "ENSEMBL", toType =
+    "ENTREZID", : 42.34% of input gene IDs are fail to map...
+
+``` r
+nrow(bkgd.genes.entrez)
+```
+
+    [1] 32283
+
+``` r
+head(bkgd.genes.entrez)
+```
+
+                 ENSEMBL ENTREZID
+    1 ENSMUSG00000000001    14679
+    2 ENSMUSG00000000003    54192
+    3 ENSMUSG00000000028    12544
+    4 ENSMUSG00000000031    14955
+    5 ENSMUSG00000000037   107815
+    6 ENSMUSG00000000049    11818
+
+``` r
+# significant genes (adjusted p-value < 0.05)
+sig.genes.entrez <- clusterProfiler::bitr(res_CastMOTSc_CastWater_adjp005$ENSEMBL,
+                                          fromType = "ENSEMBL",
+                                          toType = "ENTREZID",
+                                          OrgDb = org.Mm.eg.db)
+```
+
+    'select()' returned 1:many mapping between keys and columns
+
+    Warning in clusterProfiler::bitr(res_CastMOTSc_CastWater_adjp005$ENSEMBL, :
+    6.06% of input gene IDs are fail to map...
+
+``` r
+nrow(sig.genes.entrez)
+```
+
+    [1] 94
+
+``` r
+head(sig.genes.entrez)
+```
+
+                 ENSEMBL ENTREZID
+    1 ENSMUSG00000002289    57875
+    2 ENSMUSG00000002588    18979
+    3 ENSMUSG00000002985    11816
+    4 ENSMUSG00000003051    13710
+    5 ENSMUSG00000003421    66394
+    6 ENSMUSG00000003534    12305
+
+``` r
+# preparing rWikiPathways terms
+wp.mm.gmt <- rWikiPathways::downloadPathwayArchive(organism = "Mus musculus", 
+                                                   format = "gmt")
+wp2gene <- rWikiPathways::readPathwayGMT(wp.mm.gmt)
+wpid2gene <- wp2gene %>% dplyr::select(wpid,gene)
+head(wpid2gene) #TERM2GENE
+```
+
+        wpid   gene
+    1 WP5024  16000
+    2 WP5024  22339
+    3 WP5024 433766
+    4 WP5024  74747
+    5 WP5024  19744
+    6 WP5024  17126
+
+``` r
+wpid2name <- wp2gene %>% dplyr::select(wpid,name)
+head(wpid2name) #TERM2NAME
+```
+
+        wpid                                         name
+    1 WP5024 Hypoxia-dependent proliferation of myoblasts
+    2 WP5024 Hypoxia-dependent proliferation of myoblasts
+    3 WP5024 Hypoxia-dependent proliferation of myoblasts
+    4 WP5024 Hypoxia-dependent proliferation of myoblasts
+    5 WP5024 Hypoxia-dependent proliferation of myoblasts
+    6 WP5024 Hypoxia-dependent proliferation of myoblasts
+
+``` r
+# get the pathways for significant genes
+ewp.sig.wiki005 <- clusterProfiler::enricher(sig.genes.entrez[[2]],
+                                             universe = bkgd.genes.entrez[[2]],
+                                             # pAdjustMethod = "none",
+                                             pvalueCutoff = 0.05,
+                                             TERM2GENE = wpid2gene,
+                                             TERM2NAME = wpid2name)
+
+ewp.sig.wiki005 <- DOSE::setReadable(ewp.sig.wiki005, 
+                                     org.Mm.eg.db, 
+                                     keyType = "ENTREZID")
+nrow(ewp.sig.wiki005)
+```
+
+    [1] 2
+
+``` r
+# show the pathways
+ewp.sig.wiki005$Description
+```
+
+    [1] "PPAR signaling pathway" "Adipogenesis genes"    
+
+``` r
+enrichplot::dotplot(ewp.sig.wiki005, 
+                    showCategory = 2, 
+                    font.size = 12) +
+    xlim(0, 0.2) +
+    theme(text = element_text(size = 12))
+```
+
+![Figure 4 (E): Wikipathway significant terms and related genes that
+were enriched by MOTS-c treatment-induced gene expression in the
+skeletal
+muscle.](publication_script_files/figure-gfm/unnamed-chunk-22-1.png)
+
+## Cnetplot
+
+``` r
+target <- res_CastMOTSc_CastWater_adjp005
+OE_foldchanges <- target$log2FoldChange
+names(OE_foldchanges) <- target$SYMBOL
+head(OE_foldchanges)
+```
+
+       Angptl4       Pon1       Apoe       Elf3      Nosip       Ddr1 
+     0.4809569  1.0795098  0.6608200 -1.4140311 -0.3195135 -0.4210086 
+
+``` r
+par(cex = 1.5)
+enrichplot::cnetplot(ewp.sig.wiki005, 
+                     categorySize="pvalue", 
+                     showCategory = 2, 
+                     foldChange=OE_foldchanges, 
+                     vertex.label.font=12,
+                     circular = TRUE, colorEdge = TRUE,
+                     cex_label_gene = 1.5,
+                     cex_label_category = 1.5,
+                     cex_category = 3,
+                     cex_gene = 1.5,
+                     color_category='blue') +
+    ggplot2::scale_color_gradient(name = "fold change", 
+                                  low='lightpink', 
+                                  high='red') +
+    ggplot2::theme(legend.title=element_text(size = 18),
+                   legend.text=element_text(size = 18))
+```
+
+![Figure 4 (F): Wikipathway significant terms and related genes that
+were enriched by MOTS-c treatment-induced gene expression in the
+skeletal
+muscle.](publication_script_files/figure-gfm/unnamed-chunk-24-1.png)
+
+## Session info
+
+``` r
+sessionInfo()
+```
+
+    R version 4.2.1 (2022-06-23)
+    Platform: x86_64-apple-darwin17.0 (64-bit)
+    Running under: macOS Big Sur ... 10.16
+
+    Matrix products: default
+    BLAS:   /Library/Frameworks/R.framework/Versions/4.2/Resources/lib/libRblas.0.dylib
+    LAPACK: /Library/Frameworks/R.framework/Versions/4.2/Resources/lib/libRlapack.dylib
+
+    locale:
+    [1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+
+    attached base packages:
+    [1] stats4    stats     graphics  grDevices utils     datasets  methods  
+    [8] base     
+
+    other attached packages:
+     [1] DOSE_3.22.1                 enrichplot_1.16.2          
+     [3] rWikiPathways_1.16.0        RColorBrewer_1.1-3         
+     [5] pheatmap_1.0.12             EnhancedVolcano_1.14.0     
+     [7] ggrepel_0.9.1               clusterProfiler_4.4.4      
+     [9] org.Mm.eg.db_3.15.0         AnnotationDbi_1.58.0       
+    [11] DESeq2_1.36.0               SummarizedExperiment_1.26.1
+    [13] Biobase_2.56.0              MatrixGenerics_1.8.1       
+    [15] matrixStats_0.62.0          GenomicRanges_1.48.0       
+    [17] GenomeInfoDb_1.32.3         IRanges_2.30.1             
+    [19] S4Vectors_0.34.0            BiocGenerics_0.42.0        
+    [21] limma_3.52.2                tximport_1.24.0            
+    [23] forcats_0.5.2               stringr_1.4.1              
+    [25] dplyr_1.0.10                purrr_0.3.4                
+    [27] readr_2.1.2                 tidyr_1.2.0                
+    [29] tibble_3.1.8                ggplot2_3.3.6              
+    [31] tidyverse_1.3.2            
+
+    loaded via a namespace (and not attached):
+      [1] shadowtext_0.1.2       readxl_1.4.1           backports_1.4.1       
+      [4] fastmatch_1.1-3        plyr_1.8.7             igraph_1.3.4          
+      [7] lazyeval_0.2.2         splines_4.2.1          BiocParallel_1.30.3   
+     [10] digest_0.6.29          yulab.utils_0.0.5      htmltools_0.5.3       
+     [13] GOSemSim_2.22.0        viridis_0.6.2          GO.db_3.15.0          
+     [16] fansi_1.0.3            magrittr_2.0.3         memoise_2.0.1         
+     [19] googlesheets4_1.0.1    tzdb_0.3.0             Biostrings_2.64.1     
+     [22] annotate_1.74.0        graphlayouts_0.8.1     modelr_0.1.9          
+     [25] colorspace_2.0-3       blob_1.2.3             rvest_1.0.3           
+     [28] haven_2.5.1            xfun_0.32              crayon_1.5.1          
+     [31] RCurl_1.98-1.8         jsonlite_1.8.0         scatterpie_0.1.7      
+     [34] genefilter_1.78.0      ape_5.6-2              survival_3.4-0        
+     [37] glue_1.6.2             polyclip_1.10-0        gtable_0.3.1          
+     [40] gargle_1.2.0           zlibbioc_1.42.0        XVector_0.36.0        
+     [43] DelayedArray_0.22.0    scales_1.2.1           DBI_1.1.3             
+     [46] Rcpp_1.0.9             viridisLite_0.4.1      xtable_1.8-4          
+     [49] tidytree_0.4.0         gridGraphics_0.5-1     bit_4.0.4             
+     [52] httr_1.4.4             fgsea_1.22.0           ellipsis_0.3.2        
+     [55] pkgconfig_2.0.3        XML_3.99-0.10          farver_2.1.1          
+     [58] dbplyr_2.2.1           locfit_1.5-9.6         utf8_1.2.2            
+     [61] labeling_0.4.2         ggplotify_0.1.0        tidyselect_1.1.2      
+     [64] rlang_1.0.5            reshape2_1.4.4         munsell_0.5.0         
+     [67] cellranger_1.1.0       tools_4.2.1            cachem_1.0.6          
+     [70] downloader_0.4         cli_3.3.0              generics_0.1.3        
+     [73] RSQLite_2.2.16         broom_1.0.1            evaluate_0.16         
+     [76] fastmap_1.1.0          yaml_2.3.5             ggtree_3.4.2          
+     [79] knitr_1.40             bit64_4.0.5            fs_1.5.2              
+     [82] tidygraph_1.2.2        KEGGREST_1.36.3        ggraph_2.0.6          
+     [85] nlme_3.1-159           aplot_0.1.6            DO.db_2.9             
+     [88] xml2_1.3.3             compiler_4.2.1         rstudioapi_0.14       
+     [91] curl_4.3.2             png_0.1-7              treeio_1.20.2         
+     [94] reprex_2.0.2           tweenr_2.0.1           geneplotter_1.74.0    
+     [97] stringi_1.7.8          lattice_0.20-45        Matrix_1.4-1          
+    [100] vctrs_0.4.1            pillar_1.8.1           lifecycle_1.0.1       
+    [103] data.table_1.14.2      bitops_1.0-7           patchwork_1.1.2       
+    [106] qvalue_2.28.0          R6_2.5.1               gridExtra_2.3         
+    [109] codetools_0.2-18       MASS_7.3-58.1          assertthat_0.2.1      
+    [112] rjson_0.2.21           withr_2.5.0            GenomeInfoDbData_1.2.8
+    [115] parallel_4.2.1         hms_1.1.2              grid_4.2.1            
+    [118] ggfun_0.0.7            rmarkdown_2.16         googledrive_2.0.0     
+    [121] ggnewscale_0.4.7       ggforce_0.3.4          lubridate_1.8.0       
