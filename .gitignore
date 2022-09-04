@@ -2,4 +2,4 @@
 *.gmt
 *.qmd
 *.rmarkdown
-
+.Rhistory
