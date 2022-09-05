@@ -1,6 +1,6 @@
 #!/bin/bash
-# author: Emma Kumagai
-# creating fastQC repots
+# Author: Emma Kumagai
+# Generate fastQC repots for quality accessment
 
 # directories
 PROJECTDIR="/Volumes/HDD14TB/RNAseq_expression/MOTSc_cast_unified"
@@ -17,5 +17,3 @@ done
 
 echo finished
 
-
-# fastqc -t 12 -o /Volumes/HDD14TB/RNAseq_expression/MOTSc_cast_unified/fastqc /Volumes/HDD14TB/RNAseq_expression/MOTSc_cast_unified/fastp/Ca1.fastp.fastq.gz
