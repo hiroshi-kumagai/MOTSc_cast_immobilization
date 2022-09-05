@@ -1,20 +1,20 @@
 #!/bin/sh
-# author: Emma Kumagai
-# alignment by STAR
+# Author: Emma Kumagai
+# Align the reads with STAR
 
 # directories
 PROJECTDIR="/Volumes/HDD14TB/RNAseq_expression/MOTSc_cast_unified"
-FASTPDIR="${PROJECTDIR}/fastp"
+FASTQDIR="${PROJECTDIR}/fastq"
 # creating a directory for output
-mkdir -p ${PROJECTDIR}/star
-OUTDIR="${PROJECTDIR}/star"
+OUTDIR="${PROJECTDIR}/star_rsem"
+mkdir -p ${OUTDIR}
 
 # index directory
 INDEXDIR="/Volumes/HDD14TB/RNAseq_expression/Tools/Ensembl_STAR_Mus_index"
 
 # number of files to be processed
-FILES=`ls ${FASTPDIR}/*.fastq.gz | wc -l`  # single
-#FILES=$(ls ${FASTPDIR}/*.fastq.gz | wc -l)  # pair
+FILES=`ls ${FASTQDIR}/*.fastq.gz | wc -l`  # single
+#FILES=$(ls ${FASTQDIR}/*.fastq.gz | wc -l)  # pair
 #FILES=$((FILES/2))  # pair
 FILEIDS="${PROJECTDIR}/filename.txt"
 
@@ -22,7 +22,7 @@ FILEIDS="${PROJECTDIR}/filename.txt"
 script_started=`date +%s`
 
 # STAR
-cd ${FASTPDIR}
+cd ${FASTQDIR}
 count=1
 
 
@@ -35,15 +35,12 @@ cat ${FILEIDS} | while read line; do
     STAR \
     --runThreadN 4 \
     --readFilesCommand gunzip -c \
-    --readFilesIn ${line}.fastp.fastq.gz \
     --genomeDir ${INDEXDIR} \
+    --readFilesIn ${line}.fastq.gz \
     --outSAMtype BAM SortedByCoordinate \
-    --outFileNamePrefix ${OUTDIR}/${line}. \
-    --outReadsUnmapped Fastx \
-    #--outFilterScoreMinOverLread 0 \
-    #--outFilterMatchNminOverLread 0 \
-    #--outFilterMatchNmin 0 \
-    #--outFilterMismatchNmax 2 
+    --quantMode TranscriptomeSAM \
+    --outSAMattributes All \ 
+    --outFileNamePrefix ${OUTDIR}/${line}.
     
     # processed time for one file
     echo finished ${line} `date "+%m/%d/%Y %H:%M:%S"`
