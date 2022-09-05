@@ -3,3 +3,4 @@
 *.qmd
 *.rmarkdown
 .Rhistory
+*.html
