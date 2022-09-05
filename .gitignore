@@ -4,3 +4,5 @@
 *.rmarkdown
 .Rhistory
 *.html
+figure-html
+libs
