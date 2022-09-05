@@ -1,6 +1,6 @@
 #!bin/sh
-# author: Hiroshi Kumagai
-# edit: Emma Kumagai
+# Author: Hiroshi Kumagai
+# Editor: Emma Kumagai
 # Transcript quantification with RSEM
 
 PROJECTDIR="/Volumes/HDD14TB/RNAseq_expression/MOTSc_cast_unified"
