@@ -1,5 +1,4 @@
 #!/bin/bash
-# Author: Emma Kumagai
 # Generate fastQC repots for quality accessment
 
 # directories
