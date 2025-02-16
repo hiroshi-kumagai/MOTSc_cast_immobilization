@@ -1,5 +1,4 @@
 #!/bin/sh
-# Author: Emma Kumagai
 # Align the reads with STAR
 
 # directories
